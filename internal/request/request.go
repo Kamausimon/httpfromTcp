@@ -5,11 +5,14 @@ import (
 	"io"
 	"strings"
 	"unicode"
+
+	"github.com/Kamausimon/httpFromTcp/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	State       State
+	Headers     headers.Headers
 }
 
 type RequestLine struct {
@@ -22,6 +25,7 @@ type State int
 const (
 	initialized State = iota
 	done
+	requestStateParsingHeaders
 )
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
@@ -97,7 +101,8 @@ func parseRequestLine(requestString string) (int, *Request, error) {
 	}, nil
 }
 
-func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) parseSingleData(data []byte) (int, error) {
+
 	switch r.State {
 	case initialized:
 		bytesConsumed, request, err := parseRequestLine(string(data))
@@ -108,12 +113,44 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = request.RequestLine
-		r.State = done
+		r.Headers = headers.NewHeaders()
+		r.State = requestStateParsingHeaders
 		return bytesConsumed, nil
 
 	case done:
 		return 0, fmt.Errorf("error:trying to read data in a done state")
+	case requestStateParsingHeaders:
+		bytesConsumed, headersDone, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if bytesConsumed == 0 {
+			return 0, nil
+		}
+		if headersDone {
+			r.State = done
+		}
+		return bytesConsumed, nil
 	default:
 		return 0, fmt.Errorf("error:unknown state")
 	}
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+
+	for r.State != done {
+		n, err := r.parseSingleData(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+
+		if n == 0 {
+			break
+		}
+
+		totalBytesParsed += n
+	}
+
+	return totalBytesParsed, nil
 }
