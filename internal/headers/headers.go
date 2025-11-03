@@ -58,3 +58,8 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	return crlfIndex + 2, false, nil
 }
+
+func (h Headers) Get(key string) string {
+	normalizedKey := strings.ToLower(key)
+	return h[normalizedKey]
+}

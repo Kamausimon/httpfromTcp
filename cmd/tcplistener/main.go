@@ -37,6 +37,16 @@ func main() {
 				req.RequestLine.RequestTarget,
 				req.RequestLine.HttpVersion)
 			os.Stdout.Sync()
+			fmt.Println("Headers:")
+			if len(req.Headers) == 0 {
+				fmt.Println("- (no headers)")
+			} else {
+				for key, value := range req.Headers {
+					fmt.Printf("- %s: %s\n", key, value)
+				}
+			}
+			fmt.Println("Body:")
+			fmt.Printf("\nBODY_STRING %s", req.Body)
 		}(conn)
 	}
 

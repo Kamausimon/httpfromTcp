@@ -3,6 +3,7 @@ package request
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -13,6 +14,7 @@ type Request struct {
 	RequestLine RequestLine
 	State       State
 	Headers     headers.Headers
+	Body        []byte
 }
 
 type RequestLine struct {
@@ -24,8 +26,9 @@ type State int
 
 const (
 	initialized State = iota
-	done
 	requestStateParsingHeaders
+	requestParsingBody
+	done
 )
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
@@ -128,12 +131,33 @@ func (r *Request) parseSingleData(data []byte) (int, error) {
 			return 0, nil
 		}
 		if headersDone {
-			r.State = done
+			r.State = requestParsingBody
 		}
 		return bytesConsumed, nil
+	case requestParsingBody:
+		contentLengthStr := r.Headers.Get("Content-Length")
+		if contentLengthStr == "" {
+			r.State = done
+			return 0, nil
+		}
+		contentLength, err := strconv.Atoi(contentLengthStr)
+		if err != nil {
+			return 0, fmt.Errorf("invalid data")
+		}
+
+		r.Body = append(r.Body, data...)
+		if len(r.Body) > contentLength {
+			return 0, fmt.Errorf("length of body does not match that of content")
+		}
+		if len(r.Body) == contentLength {
+			r.State = done
+		}
+		return len(data), nil
+
 	default:
 		return 0, fmt.Errorf("error:unknown state")
 	}
+
 }
 
 func (r *Request) parse(data []byte) (int, error) {
