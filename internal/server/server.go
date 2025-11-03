@@ -62,19 +62,7 @@ func (s *Server) handle(conn net.Conn) {
 		fmt.Printf("Error parsing request: %v\n", err)
 		return
 	}
-
-	fmt.Printf("Method: %s, Target: %s, Version: %s\n",
-		req.RequestLine.Method,
-		req.RequestLine.RequestTarget,
-		req.RequestLine.HttpVersion)
-
-	fmt.Printf("Headers: %v\n", req.Headers)
-
-	if len(req.Body) > 0 {
-		fmt.Printf("Body: %s\n", string(req.Body))
-	} else {
-		fmt.Println("Body: (empty)")
-	}
+	fmt.Print(req)
 
 	response := "HTTP/1.1 200 OK\r\n" +
 		"Content-Type: text/plain\r\n" +
