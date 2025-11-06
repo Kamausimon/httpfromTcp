@@ -50,7 +50,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 			buffer = append(buffer, readBuffer[:n]...)
 
-			bytesConsumed, parseErr := request.parse(buffer)
+			bytesConsumed, parseErr := request.Parse(buffer)
 			if parseErr != nil {
 				return nil, parseErr
 			}
@@ -160,7 +160,7 @@ func (r *Request) parseSingleData(data []byte) (int, error) {
 
 }
 
-func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) Parse(data []byte) (int, error) {
 	totalBytesParsed := 0
 
 	for r.State != done {

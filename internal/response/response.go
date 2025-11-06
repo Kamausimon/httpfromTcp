@@ -1,0 +1,116 @@
+package response
+
+import (
+	"fmt"
+	"io"
+	"time"
+
+	"github.com/Kamausimon/httpFromTcp/internal/headers"
+)
+
+type StatusCode int
+
+const (
+	StatusOK                  StatusCode = 200
+	StatusBadRequest          StatusCode = 400
+	StatusInternalServerError StatusCode = 500
+)
+
+type Writer struct {
+	w io.Writer
+}
+
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{w: w}
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	var statusText string
+	switch statusCode {
+	case StatusOK:
+		statusText = "OK"
+	case StatusBadRequest:
+		statusText = "Bad Request"
+	case StatusInternalServerError:
+		statusText = "Internal Server Error"
+	default:
+		statusText = "Unknown Status"
+	}
+	_, err := fmt.Fprintf(w.w, "HTTP/1.1 %d %s \r\n", statusCode, statusText)
+	return err
+}
+
+func GetDefaultHeaders(contentLen int) headers.Headers {
+	h := headers.NewHeaders()
+	h["content-length"] = fmt.Sprintf("%d", contentLen)
+
+	h["connection"] = "close"
+
+	h["content-type"] = "text/html"
+
+	return h
+
+}
+
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+
+	for key, value := range headers {
+		_, err := fmt.Fprintf(w.w, "%s: %s\r\n", key, value)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := io.WriteString(w.w, "\r\n")
+	return err
+}
+
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	return w.w.Write(p)
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	const defaultChunkSize = 1024
+
+	totalWritten := 0
+
+	for i := 0; i < len(p); i += defaultChunkSize {
+		end := i + defaultChunkSize
+		if end > len(p) {
+			end = len(p)
+		}
+		chunk := p[i:end]
+		chunklen := len(chunk)
+
+		_, err := fmt.Fprintf(w.w, "%x\r\n", chunklen)
+		if err != nil {
+			return totalWritten, err
+		}
+		n, err := w.w.Write(chunk)
+		totalWritten += n
+		if err != nil {
+			return totalWritten, err
+		}
+
+		_, err = io.WriteString(w.w, "\r\n")
+		if err != nil {
+			return totalWritten, err
+		}
+		if flusher, ok := w.w.(interface{ Flush() error }); ok {
+			flusher.Flush()
+		}
+		time.Sleep(50 * time.Millisecond)
+
+	}
+	return totalWritten, nil
+}
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	n, err := io.WriteString(w.w, "0\r\n\r\n")
+	if err != nil {
+		return n, err
+	}
+	if flusher, ok := w.w.(interface{ Flush() error }); ok {
+		flusher.Flush()
+	}
+	return n, nil
+}
