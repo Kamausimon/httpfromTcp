@@ -118,14 +118,15 @@ func (s *Server) handle(conn net.Conn) {
 	fmt.Printf("Method: %s, Target: %s\n", req.RequestLine.Method, req.RequestLine.RequestTarget)
 
 	// Write status line
-	err = response.NewWriter(conn).WriteStatusLine(response.StatusOK)
+	responseWriter := response.NewWriter(conn)
+	err = responseWriter.WriteStatusLine(response.StatusOK)
 	if err != nil {
 		fmt.Printf("Error writing status line: %v\n", err)
 		return
 	}
 
 	// Write headers
-	err = response.NewWriter(conn).WriteHeaders(defaultHeaders)
+	err = responseWriter.WriteHeaders(defaultHeaders)
 	if err != nil {
 		fmt.Printf("Error writing headers: %v\n", err)
 		return

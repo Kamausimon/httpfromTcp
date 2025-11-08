@@ -3,6 +3,7 @@ package response
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/Kamausimon/httpFromTcp/internal/headers"
@@ -16,15 +17,31 @@ const (
 	StatusInternalServerError StatusCode = 500
 )
 
+type writerState int
+
+const (
+	writerStateStatusLine writerState = iota
+	writerStateHeaders
+	writerStateBody
+	writerStateTrailers
+)
+
 type Writer struct {
-	w io.Writer
+	w           io.Writer
+	writerState writerState
 }
 
 func NewWriter(w io.Writer) *Writer {
-	return &Writer{w: w}
+	return &Writer{
+		writerState: writerStateStatusLine,
+		w:           w}
 }
 
 func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	if w.writerState != writerStateStatusLine {
+		return fmt.Errorf("cannot write status line in state %d", w.writerState)
+	}
+	defer func() { w.writerState = writerStateHeaders }()
 	var statusText string
 	switch statusCode {
 	case StatusOK:
@@ -53,7 +70,10 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 }
 
 func (w *Writer) WriteHeaders(headers headers.Headers) error {
-
+	if w.writerState != writerStateHeaders {
+		return fmt.Errorf("cannot write headers in state %d", w.writerState)
+	}
+	defer func() { w.writerState = writerStateBody }()
 	for key, value := range headers {
 		_, err := fmt.Fprintf(w.w, "%s: %s\r\n", key, value)
 		if err != nil {
@@ -66,10 +86,16 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 }
 
 func (w *Writer) WriteBody(p []byte) (int, error) {
+	if w.writerState != writerStateBody {
+		return 0, fmt.Errorf("cannot write body in state %d", w.writerState)
+	}
 	return w.w.Write(p)
 }
 
 func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.writerState != writerStateBody {
+		return 0, fmt.Errorf("cannot write body in state %d", w.writerState)
+	}
 	const defaultChunkSize = 1024
 
 	totalWritten := 0
@@ -105,12 +131,64 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	return totalWritten, nil
 }
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	n, err := io.WriteString(w.w, "0\r\n\r\n")
+	if w.writerState != writerStateBody {
+		return 0, fmt.Errorf("cannot write body in state %d", w.writerState)
+	}
+	n, err := io.WriteString(w.w, "0\r\n")
 	if err != nil {
 		return n, err
 	}
 	if flusher, ok := w.w.(interface{ Flush() error }); ok {
 		flusher.Flush()
 	}
+	w.writerState = writerStateTrailers
 	return n, nil
+}
+
+func (w *Writer) WriteChunkedBodyDoneWithoutTrailers() error {
+	_, err := io.WriteString(w.w, "0\r\n\r\n")
+	if err != nil {
+		return err
+	}
+	if flusher, ok := w.w.(interface{ Flush() error }); ok {
+		flusher.Flush()
+	}
+	return nil
+}
+
+func GetChunkedHeaders() headers.Headers {
+	h := headers.NewHeaders()
+	h["transfer-encoding"] = "chunked"
+	h["connection"] = "close"
+	h["content-type"] = "text/plain"
+	return h
+}
+
+func GetChunkedHeadersWithTrailers(trailerNames []string) headers.Headers {
+	h := headers.NewHeaders()
+	h["transfer-encoding"] = "chunked"
+	h["connection"] = "close"
+	h["content-type"] = "text/plain"
+
+	// Announce which headers will be in trailers
+	if len(trailerNames) > 0 {
+		h["trailer"] = strings.Join(trailerNames, ", ")
+	}
+
+	return h
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	if w.writerState != writerStateTrailers {
+		return fmt.Errorf("cannot write trailers in state %d", w.writerState)
+	}
+	defer func() { w.writerState = writerStateBody }()
+	for k, v := range h {
+		_, err := fmt.Fprintf(w.w, "%s: %s\r\n", k, v)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := w.w.Write([]byte("\r\n"))
+	return err
 }

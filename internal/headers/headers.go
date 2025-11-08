@@ -63,3 +63,8 @@ func (h Headers) Get(key string) string {
 	normalizedKey := strings.ToLower(key)
 	return h[normalizedKey]
 }
+
+func (h Headers) Override(key, value string) {
+	key = strings.ToLower(key)
+	h[key] = value
+}
