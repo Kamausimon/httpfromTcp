@@ -31,3 +31,6 @@ ehthumbs.db
 Thumbs.db
 
 .env
+
+./assets
+.assets

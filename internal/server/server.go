@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -22,7 +21,7 @@ type HandlerError struct {
 	Error      error
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
 type State int
 
@@ -95,47 +94,15 @@ func handleError(w io.Writer, handleErr *HandlerError) {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-
+	w := response.NewWriter(conn)
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		parseError := &HandlerError{
-			StatusCode: 400,
-			Error:      fmt.Errorf("bad request %v", err),
-		}
-		handleError(conn, parseError)
+		w.WriteStatusLine(response.StatusBadRequest)
+		body := []byte(fmt.Sprintf("Error parsing request: %v", err))
+		w.WriteHeaders(response.GetDefaultHeaders(len(body)))
+		w.WriteBody(body)
 		return
 	}
+	s.Handler(w, req)
 
-	var buffer bytes.Buffer
-	handleErr := s.Handler(&buffer, req)
-	if handleErr != nil {
-		handleError(conn, handleErr)
-		return
-	}
-	responseBody := buffer.String()
-	defaultHeaders := response.GetDefaultHeaders(len(responseBody))
-	// Print request for debugging
-	fmt.Printf("Method: %s, Target: %s\n", req.RequestLine.Method, req.RequestLine.RequestTarget)
-
-	// Write status line
-	responseWriter := response.NewWriter(conn)
-	err = responseWriter.WriteStatusLine(response.StatusOK)
-	if err != nil {
-		fmt.Printf("Error writing status line: %v\n", err)
-		return
-	}
-
-	// Write headers
-	err = responseWriter.WriteHeaders(defaultHeaders)
-	if err != nil {
-		fmt.Printf("Error writing headers: %v\n", err)
-		return
-	}
-
-	// Write body
-	_, err = io.WriteString(conn, responseBody)
-	if err != nil {
-		fmt.Printf("Error writing body: %v\n", err)
-		return
-	}
 }
